@@ -8,7 +8,9 @@ export default function VisioTestApp() {
 
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode)
-    document.documentElement.classList.toggle('dark')
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('dark')
+    }
   }
 
   return (
@@ -36,7 +38,6 @@ export default function VisioTestApp() {
             </div>
             
             <div className="flex items-center gap-3">
-              {/* Toggle Dark Mode */}
               <button
                 onClick={toggleDarkMode}
                 className="p-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
