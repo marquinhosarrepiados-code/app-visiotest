@@ -1,8 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
-import { Download, Share2, RotateCcw, Eye, Target, Palette, AlertTriangle, CheckCircle, Clock, User } from 'lucide-react'
+import { useState } from 'react'
+import { BarChart3, Download, Share2, RefreshCw, Eye, Target, Palette, User, Phone, Calendar } from 'lucide-react'
 import { UserProfile, TestResult } from '@/app/page'
 
 interface TestResultsProps {
@@ -12,413 +11,333 @@ interface TestResultsProps {
 }
 
 export function TestResults({ userProfile, testResults, onRestart }: TestResultsProps) {
-  const [showDetails, setShowDetails] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
+  const [activeTab, setActiveTab] = useState<'overview' | 'details'>('overview')
 
-  // Calcular estatísticas
+  const getTestName = (type: string) => {
+    switch (type) {
+      case 'acuity': return 'Acuidade Visual'
+      case 'contrast': return 'Contraste'
+      case 'color': return 'Percepção de Cores'
+      default: return type
+    }
+  }
+
+  const getTestIcon = (type: string) => {
+    switch (type) {
+      case 'acuity': return <Eye className="w-5 h-5" />
+      case 'contrast': return <Target className="w-5 h-5" />
+      case 'color': return <Palette className="w-5 h-5" />
+      default: return <Eye className="w-5 h-5" />
+    }
+  }
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return 'text-green-600 dark:text-green-400'
+    if (score >= 60) return 'text-yellow-600 dark:text-yellow-400'
+    return 'text-red-600 dark:text-red-400'
+  }
+
+  const getScoreBackground = (score: number) => {
+    if (score >= 80) return 'bg-green-100 dark:bg-green-900/20'
+    if (score >= 60) return 'bg-yellow-100 dark:bg-yellow-900/20'
+    return 'bg-red-100 dark:bg-red-900/20'
+  }
+
   const averageScore = Math.round(testResults.reduce((sum, result) => sum + result.score, 0) / testResults.length)
-  
-  const testIcons = {
-    acuity: Eye,
-    contrast: Target,
-    color: Palette
-  }
 
-  const testNames = {
-    acuity: 'Acuidade Visual',
-    contrast: 'Sensibilidade ao Contraste',
-    color: 'Visão de Cores'
-  }
-
-  // Dados para gráficos
-  const chartData = testResults.map(result => ({
-    name: testNames[result.testType],
-    score: result.score,
-    level: result.level
-  }))
-
-  const pieData = [
-    { name: 'Acertos', value: averageScore, color: '#10b981' },
-    { name: 'Erros', value: 100 - averageScore, color: '#ef4444' }
-  ]
-
-  // Gerar recomendações baseadas nos resultados
   const generateRecommendations = () => {
     const recommendations = []
     
+    if (averageScore < 60) {
+      recommendations.push('Recomendamos consulta oftalmológica urgente para avaliação detalhada.')
+    } else if (averageScore < 80) {
+      recommendations.push('Considere agendar uma consulta oftalmológica para avaliação preventiva.')
+    }
+
     const acuityResult = testResults.find(r => r.testType === 'acuity')
-    const contrastResult = testResults.find(r => r.testType === 'contrast')
-    const colorResult = testResults.find(r => r.testType === 'color')
-
     if (acuityResult && acuityResult.score < 70) {
-      recommendations.push({
-        type: 'warning',
-        title: 'Acuidade Visual Reduzida',
-        message: 'Seus resultados sugerem possível redução na nitidez da visão. Recomendamos consulta oftalmológica.',
-        priority: 'high'
-      })
+      recommendations.push('Possível necessidade de correção visual (óculos ou lentes).')
     }
 
-    if (contrastResult && contrastResult.score < 60) {
-      recommendations.push({
-        type: 'warning',
-        title: 'Sensibilidade ao Contraste Baixa',
-        message: 'Dificuldade para distinguir contrastes pode afetar a visão noturna e em ambientes com pouca luz.',
-        priority: 'medium'
-      })
+    const contrastResult = testResults.find(r => r.testType === 'contrast')
+    if (contrastResult && contrastResult.score < 70) {
+      recommendations.push('Dificuldades com contraste podem indicar problemas de retina ou catarata.')
     }
 
-    if (colorResult && colorResult.score < 50) {
-      recommendations.push({
-        type: 'info',
-        title: 'Possível Deficiência Cromática',
-        message: 'Os resultados sugerem dificuldade na percepção de certas cores. Isso é comum e geralmente não afeta a qualidade de vida.',
-        priority: 'low'
-      })
+    const colorResult = testResults.find(r => r.testType === 'color')
+    if (colorResult && colorResult.score < 70) {
+      recommendations.push('Possível deficiência na percepção de cores (daltonismo).')
     }
 
-    if (userProfile.age > 40 && averageScore < 80) {
-      recommendations.push({
-        type: 'info',
-        title: 'Mudanças Relacionadas à Idade',
-        message: 'Algumas alterações visuais são normais com o envelhecimento. Exames regulares são importantes.',
-        priority: 'medium'
-      })
+    if (userProfile.visualDifficulties.length > 0) {
+      recommendations.push('Sintomas relatados requerem atenção médica especializada.')
     }
 
     if (recommendations.length === 0) {
-      recommendations.push({
-        type: 'success',
-        title: 'Resultados Satisfatórios',
-        message: 'Seus resultados estão dentro dos parâmetros normais. Continue cuidando da sua saúde visual.',
-        priority: 'low'
-      })
+      recommendations.push('Resultados dentro da normalidade. Mantenha consultas preventivas anuais.')
     }
 
     return recommendations
   }
 
-  const recommendations = generateRecommendations()
-
-  // Função para exportar resultados
-  const exportResults = async () => {
-    setIsExporting(true)
-    
-    const exportData = {
-      user: {
-        name: userProfile.name,
-        age: userProfile.age,
-        gender: userProfile.gender,
-        usesGlasses: userProfile.usesGlasses,
-        lensType: userProfile.lensType,
-        visualDifficulties: userProfile.visualDifficulties,
-        healthHistory: userProfile.healthHistory
-      },
-      results: testResults.map(result => ({
-        testType: result.testType,
-        score: result.score,
-        level: result.level,
-        completedAt: result.completedAt,
-        responses: result.responses
-      })),
-      summary: {
-        averageScore,
-        totalTests: testResults.length,
-        completedAt: new Date(),
-        recommendations: recommendations.map(r => ({
-          type: r.type,
-          title: r.title,
-          message: r.message
-        }))
-      }
+  const handleShare = async () => {
+    const shareData = {
+      title: 'Meus Resultados - VisioTest+',
+      text: `Realizei testes de visão no VisioTest+. Pontuação média: ${averageScore}%`,
+      url: window.location.href
     }
 
-    try {
-      // Simular envio via webhook (substitua pela URL real)
-      const webhookUrl = process.env.NEXT_PUBLIC_WEBHOOK_URL || 'https://webhook.site/your-unique-url'
-      
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(exportData)
-      })
-
-      if (response.ok) {
-        alert('Resultados enviados com sucesso!')
-      } else {
-        throw new Error('Erro no envio')
-      }
-    } catch (error) {
-      console.error('Erro ao enviar resultados:', error)
-      
-      // Fallback: download como JSON
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `visiotest-results-${userProfile.name.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.json`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-      
-      alert('Resultados baixados como arquivo JSON!')
-    }
-    
-    setIsExporting(false)
-  }
-
-  // Função para compartilhar
-  const shareResults = async () => {
-    const shareText = `Completei meus testes de visão no VisioTest+!\n\nResultados:\n${testResults.map(r => `${testNames[r.testType]}: ${r.score}%`).join('\n')}\n\nMédia geral: ${averageScore}%`
-    
     if (navigator.share) {
       try {
-        await navigator.share({
-          title: 'Meus Resultados VisioTest+',
-          text: shareText
-        })
+        await navigator.share(shareData)
       } catch (error) {
-        console.log('Compartilhamento cancelado')
+        console.log('Erro ao compartilhar:', error)
       }
     } else {
-      // Fallback: copiar para clipboard
-      navigator.clipboard.writeText(shareText).then(() => {
-        alert('Resultados copiados para a área de transferência!')
-      })
+      // Fallback para navegadores que não suportam Web Share API
+      navigator.clipboard.writeText(`${shareData.text} - ${shareData.url}`)
+      alert('Link copiado para a área de transferência!')
     }
+  }
+
+  const handleDownload = () => {
+    const reportData = {
+      usuario: {
+        nome: userProfile.name,
+        idade: userProfile.age,
+        genero: userProfile.gender,
+        telefone: userProfile.phone,
+        usaOculos: userProfile.usesGlasses,
+        tipoLente: userProfile.lensType,
+        dificuldades: userProfile.visualDifficulties,
+        historico: userProfile.healthHistory
+      },
+      resultados: testResults.map(result => ({
+        teste: getTestName(result.testType),
+        pontuacao: result.score,
+        nivel: result.level,
+        dataRealizacao: result.completedAt
+      })),
+      pontuacaoMedia: averageScore,
+      recomendacoes: generateRecommendations(),
+      dataRelatorio: new Date().toLocaleDateString('pt-BR')
+    }
+
+    const dataStr = JSON.stringify(reportData, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `visiotest-relatorio-${userProfile.name.replace(/\s+/g, '-').toLowerCase()}.json`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      {/* Header dos Resultados */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-10 h-10 text-white" />
+    <div className="max-w-4xl mx-auto">
+      {/* Header */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8 mb-6">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-green-600 to-green-800 rounded-full flex items-center justify-center mx-auto mb-4">
+            <BarChart3 className="w-8 h-8 text-white" />
           </div>
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Testes Concluídos!
-          </h2>
-          <p className="text-gray-600 dark:text-gray-300">
-            Aqui estão seus resultados detalhados
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            Resultados dos Testes
+          </h1>
+          <p className="text-gray-600 dark:text-gray-300 mb-6">
+            Relatório completo da avaliação visual de {userProfile.name}
           </p>
-        </div>
 
-        {/* Informações do Usuário */}
-        <div className="bg-blue-50 dark:bg-slate-700 rounded-xl p-6 mb-8">
-          <div className="flex items-center gap-3 mb-4">
-            <User className="w-5 h-5 text-blue-600" />
-            <h3 className="font-semibold text-gray-900 dark:text-white">
-              Informações do Teste
-            </h3>
+          {/* Score Overview */}
+          <div className={`inline-flex items-center gap-2 px-6 py-3 rounded-full ${getScoreBackground(averageScore)}`}>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Pontuação Média:
+            </span>
+            <span className={`text-2xl font-bold ${getScoreColor(averageScore)}`}>
+              {averageScore}%
+            </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div>
-              <span className="text-gray-600 dark:text-gray-400">Nome:</span>
-              <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                {userProfile.name}
-              </span>
-            </div>
-            <div>
-              <span className="text-gray-600 dark:text-gray-400">Idade:</span>
-              <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                {userProfile.age} anos
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Clock className="w-4 h-4 text-gray-500" />
-              <span className="text-gray-600 dark:text-gray-400">Concluído em:</span>
-              <span className="ml-1 font-medium text-gray-900 dark:text-white">
-                {new Date().toLocaleDateString('pt-BR')}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Score Geral */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-32 h-32 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white mb-4">
-            <div className="text-center">
-              <div className="text-3xl font-bold">{averageScore}%</div>
-              <div className="text-sm opacity-90">Score Geral</div>
-            </div>
-          </div>
-          <p className="text-gray-600 dark:text-gray-300">
-            Média dos {testResults.length} testes realizados
-          </p>
         </div>
       </div>
 
-      {/* Resultados por Teste */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {testResults.map((result) => {
-          const Icon = testIcons[result.testType]
-          const getScoreColor = (score: number) => {
-            if (score >= 80) return 'text-green-600'
-            if (score >= 60) return 'text-yellow-600'
-            return 'text-red-600'
-          }
-
-          return (
-            <div key={result.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-blue-100 dark:bg-slate-700 rounded-lg flex items-center justify-center">
-                  <Icon className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900 dark:text-white">
-                    {testNames[result.testType]}
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Nível {result.level}
-                  </p>
-                </div>
-              </div>
-              
-              <div className="text-center">
-                <div className={`text-4xl font-bold mb-2 ${getScoreColor(result.score)}`}>
-                  {result.score}%
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-2">
-                  <div 
-                    className={`h-2 rounded-full ${
-                      result.score >= 80 ? 'bg-green-500' :
-                      result.score >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                    }`}
-                    style={{ width: `${result.score}%` }}
-                  />
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                  {result.responses.filter((r: any) => r.correct).length} de {result.responses.length} corretas
-                </p>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Gráficos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Gráfico de Barras */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">
-            Desempenho por Teste
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="name" 
-                tick={{ fontSize: 12 }}
-                angle={-45}
-                textAnchor="end"
-                height={80}
-              />
-              <YAxis domain={[0, 100]} />
-              <Tooltip />
-              <Bar dataKey="score" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* Tabs */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl overflow-hidden">
+        <div className="flex border-b border-gray-200 dark:border-slate-700">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+              activeTab === 'overview'
+                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            Visão Geral
+          </button>
+          <button
+            onClick={() => setActiveTab('details')}
+            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+              activeTab === 'details'
+                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-b-2 border-blue-600'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            Detalhes
+          </button>
         </div>
 
-        {/* Gráfico de Pizza */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">
-            Distribuição Geral
-          </h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={pieData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={100}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {pieData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+        <div className="p-8">
+          {activeTab === 'overview' && (
+            <div className="space-y-8">
+              {/* Test Results Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {testResults.map((result) => (
+                  <div key={result.id} className="bg-gray-50 dark:bg-slate-700 rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+                        {getTestIcon(result.testType)}
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-gray-900 dark:text-white">
+                          {getTestName(result.testType)}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          Nível {result.level}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="text-center">
+                      <div className={`text-3xl font-bold mb-2 ${getScoreColor(result.score)}`}>
+                        {result.score}%
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            result.score >= 80 ? 'bg-green-500' :
+                            result.score >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${result.score}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex justify-center gap-4 mt-4">
-            {pieData.map((entry, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <div 
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: entry.color }}
-                />
-                <span className="text-sm text-gray-600 dark:text-gray-300">
-                  {entry.name}: {entry.value}%
-                </span>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
 
-      {/* Recomendações */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-8">
-        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">
-          Recomendações Personalizadas
-        </h3>
-        <div className="space-y-4">
-          {recommendations.map((rec, index) => {
-            const getIcon = () => {
-              switch (rec.type) {
-                case 'warning': return <AlertTriangle className="w-5 h-5 text-yellow-500" />
-                case 'success': return <CheckCircle className="w-5 h-5 text-green-500" />
-                default: return <Eye className="w-5 h-5 text-blue-500" />
-              }
-            }
+              {/* Recommendations */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-6">
+                <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-4">
+                  Recomendações Personalizadas
+                </h3>
+                <ul className="space-y-2">
+                  {generateRecommendations().map((recommendation, index) => (
+                    <li key={index} className="flex items-start gap-2 text-blue-800 dark:text-blue-200">
+                      <div className="w-1.5 h-1.5 bg-blue-600 dark:bg-blue-400 rounded-full mt-2 flex-shrink-0" />
+                      <span className="text-sm">{recommendation}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
 
-            const getBgColor = () => {
-              switch (rec.type) {
-                case 'warning': return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
-                case 'success': return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                default: return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-              }
-            }
-
-            return (
-              <div key={index} className={`p-4 rounded-lg border ${getBgColor()}`}>
-                <div className="flex items-start gap-3">
-                  {getIcon()}
-                  <div>
-                    <h4 className="font-semibold text-gray-900 dark:text-white mb-1">
-                      {rec.title}
-                    </h4>
-                    <p className="text-gray-600 dark:text-gray-300 text-sm">
-                      {rec.message}
-                    </p>
+          {activeTab === 'details' && (
+            <div className="space-y-8">
+              {/* User Profile */}
+              <div className="bg-gray-50 dark:bg-slate-700 rounded-xl p-6">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <User className="w-5 h-5" />
+                  Perfil do Usuário
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-gray-500" />
+                    <span className="text-gray-600 dark:text-gray-400">Nome:</span>
+                    <span className="text-gray-900 dark:text-white font-medium">{userProfile.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-gray-500" />
+                    <span className="text-gray-600 dark:text-gray-400">Idade:</span>
+                    <span className="text-gray-900 dark:text-white font-medium">{userProfile.age} anos</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-gray-500" />
+                    <span className="text-gray-600 dark:text-gray-400">Telefone:</span>
+                    <span className="text-gray-900 dark:text-white font-medium">{userProfile.phone}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Eye className="w-4 h-4 text-gray-500" />
+                    <span className="text-gray-600 dark:text-gray-400">Óculos:</span>
+                    <span className="text-gray-900 dark:text-white font-medium">
+                      {userProfile.usesGlasses ? `Sim (${userProfile.lensType})` : 'Não'}
+                    </span>
                   </div>
                 </div>
+                
+                {userProfile.visualDifficulties.length > 0 && (
+                  <div className="mt-4">
+                    <span className="text-gray-600 dark:text-gray-400 text-sm">Dificuldades relatadas:</span>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {userProfile.visualDifficulties.map((difficulty, index) => (
+                        <span
+                          key={index}
+                          className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 text-xs rounded-full"
+                        >
+                          {difficulty}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            )
-          })}
+
+              {/* Detailed Results */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Resultados Detalhados
+                </h3>
+                {testResults.map((result) => (
+                  <div key={result.id} className="bg-gray-50 dark:bg-slate-700 rounded-xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+                          {getTestIcon(result.testType)}
+                        </div>
+                        <h4 className="font-semibold text-gray-900 dark:text-white">
+                          {getTestName(result.testType)}
+                        </h4>
+                      </div>
+                      <span className={`text-xl font-bold ${getScoreColor(result.score)}`}>
+                        {result.score}%
+                      </span>
+                    </div>
+                    
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      <p>Respostas corretas: {result.responses.filter(r => r.correct).length} de {result.responses.length}</p>
+                      <p>Nível de dificuldade: {result.level}</p>
+                      <p>Realizado em: {result.completedAt.toLocaleString('pt-BR')}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Ações */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-center">
+      {/* Actions */}
+      <div className="flex flex-col sm:flex-row gap-4 mt-6">
         <button
-          onClick={exportResults}
-          disabled={isExporting}
-          className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors font-medium"
+          onClick={handleDownload}
+          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           <Download className="w-5 h-5" />
-          {isExporting ? 'Exportando...' : 'Exportar Resultados'}
+          Baixar Relatório
         </button>
         
         <button
-          onClick={shareResults}
-          className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium"
+          onClick={handleShare}
+          className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           <Share2 className="w-5 h-5" />
           Compartilhar
@@ -426,45 +345,31 @@ export function TestResults({ userProfile, testResults, onRestart }: TestResults
         
         <button
           onClick={onRestart}
-          className="flex items-center gap-2 px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors font-medium"
+          className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
         >
-          <RotateCcw className="w-5 h-5" />
+          <RefreshCw className="w-5 h-5" />
           Novo Teste
         </button>
       </div>
 
-      {/* Detalhes Técnicos */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg p-6">
-        <button
-          onClick={() => setShowDetails(!showDetails)}
-          className="w-full flex items-center justify-between text-left"
-        >
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Detalhes Técnicos
-          </h3>
-          <div className={`transform transition-transform ${showDetails ? 'rotate-180' : ''}`}>
-            ↓
+      {/* Medical Disclaimer */}
+      <div className="mt-8 p-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl">
+        <div className="flex items-start gap-3">
+          <div className="w-6 h-6 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5">
+            <svg fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
           </div>
-        </button>
-        
-        {showDetails && (
-          <div className="mt-6 space-y-4">
-            {testResults.map((result, index) => (
-              <div key={index} className="border-l-4 border-blue-500 pl-4">
-                <h4 className="font-medium text-gray-900 dark:text-white mb-2">
-                  {testNames[result.testType]}
-                </h4>
-                <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1">
-                  <p>Nível de dificuldade: {result.level}</p>
-                  <p>Questões respondidas: {result.responses.length}</p>
-                  <p>Acertos: {result.responses.filter((r: any) => r.correct).length}</p>
-                  <p>Precisão: {result.score}%</p>
-                  <p>Concluído em: {new Date(result.completedAt).toLocaleString('pt-BR')}</p>
-                </div>
-              </div>
-            ))}
+          <div>
+            <h4 className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+              Importante: Este não é um diagnóstico médico
+            </h4>
+            <p className="text-sm text-yellow-700 dark:text-yellow-300">
+              Os resultados deste teste são apenas indicativos e não substituem uma consulta oftalmológica profissional. 
+              Para um diagnóstico preciso e tratamento adequado, consulte sempre um médico oftalmologista qualificado.
+            </p>
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

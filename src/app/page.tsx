@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { UserRegistration } from '@/components/UserRegistration'
+import { Payment } from '@/components/Payment'
 import { VisionTests } from '@/components/VisionTests'
 import { TestResults } from '@/components/TestResults'
 import { Header } from '@/components/Header'
@@ -11,6 +12,7 @@ export type UserProfile = {
   name: string
   age: number
   gender: 'male' | 'female' | 'other'
+  phone: string
   usesGlasses: boolean
   lensType?: 'reading' | 'distance' | 'bifocal' | 'progressive'
   visualDifficulties: string[]
@@ -29,14 +31,22 @@ export type TestResult = {
 }
 
 export default function VisioTestApp() {
-  const [currentStep, setCurrentStep] = useState<'registration' | 'tests' | 'results'>('registration')
+  const [currentStep, setCurrentStep] = useState<'registration' | 'payment' | 'tests' | 'results'>('registration')
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [testResults, setTestResults] = useState<TestResult[]>([])
   const [darkMode, setDarkMode] = useState(false)
 
   const handleRegistrationComplete = (profile: UserProfile) => {
     setUserProfile(profile)
+    setCurrentStep('payment')
+  }
+
+  const handlePaymentComplete = () => {
     setCurrentStep('tests')
+  }
+
+  const handlePaymentCancel = () => {
+    setCurrentStep('registration')
   }
 
   const handleTestsComplete = (results: TestResult[]) => {
@@ -59,6 +69,14 @@ export default function VisioTestApp() {
       <main className="container mx-auto px-4 py-8">
         {currentStep === 'registration' && (
           <UserRegistration onComplete={handleRegistrationComplete} />
+        )}
+        
+        {currentStep === 'payment' && userProfile && (
+          <Payment 
+            userId={userProfile.id}
+            onPaymentComplete={handlePaymentComplete}
+            onCancel={handlePaymentCancel}
+          />
         )}
         
         {currentStep === 'tests' && userProfile && (
