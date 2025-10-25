@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { User, Calendar, Eye, Heart, Phone, ChevronRight } from 'lucide-react'
-import { UserProfile } from '@/app/page'
-import { supabase } from '@/lib/supabase'
+import { UserProfile } from '@/lib/types'
+import { userService } from '@/lib/firebaseService'
+import { User, Phone, MapPin, Eye, Heart, AlertCircle } from 'lucide-react'
 
 interface UserRegistrationProps {
   onComplete: (profile: UserProfile) => void
@@ -13,134 +13,168 @@ export function UserRegistration({ onComplete }: UserRegistrationProps) {
   const [formData, setFormData] = useState({
     name: '',
     age: '',
-    gender: '' as 'male' | 'female' | 'other' | '',
+    gender: '',
     phone: '',
+    city: '',
     usesGlasses: false,
-    lensType: '' as 'reading' | 'distance' | 'multifocal' | 'bifocal' | '',
+    lensType: '',
     visualDifficulties: [] as string[],
-    healthHistory: ''
+    healthHistory: [] as string[]
   })
-
+  
+  const [isLoading, setIsLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const visualDifficultyOptions = [
-    'Visão embaçada',
-    'Dificuldade para ler',
-    'Sensibilidade à luz',
-    'Visão noturna prejudicada',
-    'Dores de cabeça frequentes',
-    'Olhos secos',
-    'Visão dupla',
-    'Manchas na visão'
+    'visao_noturna',
+    'daltonismo', 
+    'miopia',
+    'hipermetropia',
+    'astigmatismo',
+    'presbiopia',
+    'glaucoma_familia',
+    'catarata_familia'
   ]
 
-  const handleDifficultyChange = (difficulty: string) => {
-    setFormData(prev => ({
-      ...prev,
-      visualDifficulties: prev.visualDifficulties.includes(difficulty)
-        ? prev.visualDifficulties.filter(d => d !== difficulty)
-        : [...prev.visualDifficulties, difficulty]
-    }))
-  }
-
-  const validatePhone = (phone: string) => {
-    // Remove todos os caracteres não numéricos
-    const cleanPhone = phone.replace(/\D/g, '')
-    // Verifica se tem 10 ou 11 dígitos (formato brasileiro)
-    return cleanPhone.length >= 10 && cleanPhone.length <= 11
-  }
-
-  const formatPhone = (phone: string) => {
-    // Remove todos os caracteres não numéricos
-    const cleanPhone = phone.replace(/\D/g, '')
-    
-    // Aplica máscara de telefone brasileiro
-    if (cleanPhone.length <= 10) {
-      return cleanPhone.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3')
-    } else {
-      return cleanPhone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3')
-    }
-  }
+  const healthHistoryOptions = [
+    'diabetes',
+    'hipertensao',
+    'enxaqueca',
+    'uso_medicamentos',
+    'cirurgia_ocular',
+    'trauma_ocular',
+    'doenca_autoimune',
+    'historico_familiar'
+  ]
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
 
-    if (!formData.name.trim()) newErrors.name = 'Nome é obrigatório'
-    if (!formData.age || parseInt(formData.age) < 5 || parseInt(formData.age) > 120) {
+    if (!formData.name.trim()) {
+      newErrors.name = 'Nome é obrigatório'
+    }
+
+    const age = parseInt(formData.age)
+    if (!formData.age || age < 5 || age > 120) {
       newErrors.age = 'Idade deve estar entre 5 e 120 anos'
     }
-    if (!formData.gender) newErrors.gender = 'Gênero é obrigatório'
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'Número de celular é obrigatório'
-    } else if (!validatePhone(formData.phone)) {
-      newErrors.phone = 'Número de celular inválido'
+
+    if (!formData.gender) {
+      newErrors.gender = 'Gênero é obrigatório'
     }
+
+    if (!formData.phone.trim()) {
+      newErrors.phone = 'Telefone é obrigatório'
+    } else if (!/^\(\d{2}\)\s\d{4,5}-\d{4}$/.test(formData.phone)) {
+      newErrors.phone = 'Formato: (11) 99999-9999'
+    }
+
+    if (!formData.city.trim()) {
+      newErrors.city = 'Cidade é obrigatória'
+    }
+
     if (formData.usesGlasses && !formData.lensType) {
-      newErrors.lensType = 'Tipo de lente é obrigatório para usuários de óculos'
+      newErrors.lensType = 'Selecione o tipo de lente'
     }
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
+  const formatPhone = (value: string) => {
+    const numbers = value.replace(/\D/g, '')
+    if (numbers.length <= 11) {
+      return numbers.replace(/(\d{2})(\d{4,5})(\d{4})/, '($1) $2-$3')
+    }
+    return value
+  }
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatPhone(e.target.value)
+    setFormData(prev => ({ ...prev, phone: formatted }))
+  }
+
+  const handleCheckboxChange = (
+    field: 'visualDifficulties' | 'healthHistory',
+    value: string
+  ) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: prev[field].includes(value)
+        ? prev[field].filter(item => item !== value)
+        : [...prev[field], value]
+    }))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!validateForm()) return
+    if (!validateForm()) {
+      return
+    }
 
-    setIsSubmitting(true)
+    setIsLoading(true)
 
     try {
-      // Salvar usuário no Supabase
-      const { data, error } = await supabase
-        .from('users')
-        .insert({
-          name: formData.name.trim(),
-          age: parseInt(formData.age),
-          gender: formData.gender as 'male' | 'female' | 'other',
-          phone: formData.phone.replace(/\D/g, ''), // Salva apenas números
-          uses_glasses: formData.usesGlasses,
-          lens_type: formData.lensType || null,
-          visual_difficulties: formData.visualDifficulties,
-          health_history: formData.healthHistory.trim()
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
-      const profile: UserProfile = {
-        id: data.id,
-        name: data.name,
-        age: data.age,
-        gender: data.gender,
-        phone: data.phone,
-        usesGlasses: data.uses_glasses,
-        lensType: data.lens_type || undefined,
-        visualDifficulties: data.visual_difficulties,
-        healthHistory: data.health_history,
-        createdAt: new Date(data.created_at)
+      const userProfile: Omit<UserProfile, 'id' | 'createdAt'> = {
+        name: formData.name.trim(),
+        age: parseInt(formData.age),
+        gender: formData.gender as 'masculino' | 'feminino' | 'outro',
+        phone: formData.phone,
+        city: formData.city.trim(),
+        usesGlasses: formData.usesGlasses,
+        lensType: formData.lensType as 'perto' | 'longe' | 'multifocal' | 'bifocal' | undefined,
+        visualDifficulties: formData.visualDifficulties,
+        healthHistory: formData.healthHistory
       }
 
-      onComplete(profile)
+      const createdProfile = await userService.create(userProfile)
+      onComplete(createdProfile)
     } catch (error) {
-      console.error('Erro ao salvar usuário:', error)
+      console.error('Erro ao criar perfil:', error)
       setErrors({ submit: 'Erro ao salvar dados. Tente novamente.' })
     } finally {
-      setIsSubmitting(false)
+      setIsLoading(false)
     }
+  }
+
+  const getDifficultyLabel = (key: string) => {
+    const labels: Record<string, string> = {
+      visao_noturna: 'Dificuldade para enxergar à noite',
+      daltonismo: 'Dificuldade para distinguir cores',
+      miopia: 'Dificuldade para ver de longe',
+      hipermetropia: 'Dificuldade para ver de perto',
+      astigmatismo: 'Visão embaçada ou distorcida',
+      presbiopia: 'Dificuldade para focar objetos próximos',
+      glaucoma_familia: 'Histórico familiar de glaucoma',
+      catarata_familia: 'Histórico familiar de catarata'
+    }
+    return labels[key] || key
+  }
+
+  const getHealthLabel = (key: string) => {
+    const labels: Record<string, string> = {
+      diabetes: 'Diabetes',
+      hipertensao: 'Hipertensão arterial',
+      enxaqueca: 'Enxaqueca frequente',
+      uso_medicamentos: 'Uso regular de medicamentos',
+      cirurgia_ocular: 'Cirurgia ocular prévia',
+      trauma_ocular: 'Trauma ou lesão ocular',
+      doenca_autoimune: 'Doença autoimune',
+      historico_familiar: 'Histórico familiar de problemas oculares'
+    }
+    return labels[key] || key
   }
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-8">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-800 rounded-full flex items-center justify-center mx-auto mb-4">
-            <User className="w-8 h-8 text-white" />
+          <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-4">
+            <User className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Cadastro do Usuário
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+            Cadastro Completo
           </h2>
           <p className="text-gray-600 dark:text-gray-300">
             Preencha seus dados para personalizar os testes de visão
@@ -148,155 +182,158 @@ export function UserRegistration({ onComplete }: UserRegistrationProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Nome */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Nome Completo *
-            </label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className={`w-full px-4 py-3 rounded-lg border ${
-                errors.name ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'
-              } bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-              placeholder="Digite seu nome completo"
-              disabled={isSubmitting}
-            />
-            {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
-          </div>
-
-          {/* Idade e Gênero */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Informações Básicas */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                <Calendar className="w-4 h-4 inline mr-1" />
+                Nome Completo *
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                placeholder="Seu nome completo"
+              />
+              {errors.name && <p className="text-red-500 text-sm mt-1">{errors.name}</p>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Idade *
               </label>
               <input
                 type="number"
-                min="5"
-                max="120"
                 value={formData.age}
                 onChange={(e) => setFormData(prev => ({ ...prev, age: e.target.value }))}
-                className={`w-full px-4 py-3 rounded-lg border ${
-                  errors.age ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'
-                } bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                 placeholder="Sua idade"
-                disabled={isSubmitting}
+                min="5"
+                max="120"
               />
               {errors.age && <p className="text-red-500 text-sm mt-1">{errors.age}</p>}
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <Phone className="w-4 h-4 inline mr-2" />
+                Telefone *
+              </label>
+              <input
+                type="tel"
+                value={formData.phone}
+                onChange={handlePhoneChange}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                placeholder="(11) 99999-9999"
+                maxLength={15}
+              />
+              {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Gênero *
+                <MapPin className="w-4 h-4 inline mr-2" />
+                Cidade *
               </label>
-              <select
-                value={formData.gender}
-                onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value as any }))}
-                className={`w-full px-4 py-3 rounded-lg border ${
-                  errors.gender ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'
-                } bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                disabled={isSubmitting}
-              >
-                <option value="">Selecione</option>
-                <option value="male">Masculino</option>
-                <option value="female">Feminino</option>
-                <option value="other">Outro</option>
-              </select>
-              {errors.gender && <p className="text-red-500 text-sm mt-1">{errors.gender}</p>}
+              <input
+                type="text"
+                value={formData.city}
+                onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                placeholder="Sua cidade"
+              />
+              {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
             </div>
           </div>
 
-          {/* Número de Celular */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              <Phone className="w-4 h-4 inline mr-1" />
-              Número de Celular *
+              Gênero *
             </label>
-            <input
-              type="tel"
-              value={formData.phone}
-              onChange={(e) => {
-                const formatted = formatPhone(e.target.value)
-                setFormData(prev => ({ ...prev, phone: formatted }))
-              }}
-              className={`w-full px-4 py-3 rounded-lg border ${
-                errors.phone ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'
-              } bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-              placeholder="(11) 99999-9999"
-              maxLength={15}
-              disabled={isSubmitting}
-            />
-            {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Número para contato sobre os resultados dos testes
-            </p>
-          </div>
-
-          {/* Uso de Óculos */}
-          <div>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={formData.usesGlasses}
-                onChange={(e) => setFormData(prev => ({ 
-                  ...prev, 
-                  usesGlasses: e.target.checked,
-                  lensType: e.target.checked ? prev.lensType : ''
-                }))}
-                className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-                disabled={isSubmitting}
-              />
-              <Eye className="w-5 h-5 text-blue-600" />
-              <span className="text-gray-700 dark:text-gray-300 font-medium">
-                Uso óculos ou lentes de contato
-              </span>
-            </label>
-          </div>
-
-          {/* Tipo de Lente */}
-          {formData.usesGlasses && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Tipo de Lente *
-              </label>
-              <select
-                value={formData.lensType}
-                onChange={(e) => setFormData(prev => ({ ...prev, lensType: e.target.value as any }))}
-                className={`w-full px-4 py-3 rounded-lg border ${
-                  errors.lensType ? 'border-red-500' : 'border-gray-300 dark:border-slate-600'
-                } bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent`}
-                disabled={isSubmitting}
-              >
-                <option value="">Selecione o tipo</option>
-                <option value="reading">Para perto (leitura)</option>
-                <option value="distance">Para longe (distância)</option>
-                <option value="bifocal">Bifocal</option>
-                <option value="multifocal">Multifocal (progressiva)</option>
-              </select>
-              {errors.lensType && <p className="text-red-500 text-sm mt-1">{errors.lensType}</p>}
+            <div className="grid grid-cols-3 gap-4">
+              {['masculino', 'feminino', 'outro'].map((gender) => (
+                <label key={gender} className="flex items-center">
+                  <input
+                    type="radio"
+                    name="gender"
+                    value={gender}
+                    checked={formData.gender === gender}
+                    onChange={(e) => setFormData(prev => ({ ...prev, gender: e.target.value }))}
+                    className="mr-2"
+                  />
+                  <span className="capitalize text-gray-700 dark:text-gray-300">{gender}</span>
+                </label>
+              ))}
             </div>
-          )}
+            {errors.gender && <p className="text-red-500 text-sm mt-1">{errors.gender}</p>}
+          </div>
+
+          {/* Informações sobre Óculos */}
+          <div className="border-t border-gray-200 dark:border-gray-600 pt-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+              <Eye className="w-5 h-5 mr-2" />
+              Informações Visuais
+            </h3>
+            
+            <div className="mb-4">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={formData.usesGlasses}
+                  onChange={(e) => setFormData(prev => ({ 
+                    ...prev, 
+                    usesGlasses: e.target.checked,
+                    lensType: e.target.checked ? prev.lensType : ''
+                  }))}
+                  className="mr-3"
+                />
+                <span className="text-gray-700 dark:text-gray-300">Uso óculos ou lentes de contato</span>
+              </label>
+            </div>
+
+            {formData.usesGlasses && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Tipo de Lente *
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {['perto', 'longe', 'multifocal', 'bifocal'].map((type) => (
+                    <label key={type} className="flex items-center">
+                      <input
+                        type="radio"
+                        name="lensType"
+                        value={type}
+                        checked={formData.lensType === type}
+                        onChange={(e) => setFormData(prev => ({ ...prev, lensType: e.target.value }))}
+                        className="mr-2"
+                      />
+                      <span className="capitalize text-gray-700 dark:text-gray-300">{type}</span>
+                    </label>
+                  ))}
+                </div>
+                {errors.lensType && <p className="text-red-500 text-sm mt-1">{errors.lensType}</p>}
+              </div>
+            )}
+          </div>
 
           {/* Dificuldades Visuais */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+            <h4 className="text-md font-medium text-gray-900 dark:text-white mb-3">
               Dificuldades Visuais (selecione todas que se aplicam)
-            </label>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {visualDifficultyOptions.map((difficulty) => (
-                <label key={difficulty} className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700">
+                <label key={difficulty} className="flex items-center">
                   <input
                     type="checkbox"
                     checked={formData.visualDifficulties.includes(difficulty)}
-                    onChange={() => handleDifficultyChange(difficulty)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                    disabled={isSubmitting}
+                    onChange={() => handleCheckboxChange('visualDifficulties', difficulty)}
+                    className="mr-3"
                   />
                   <span className="text-sm text-gray-700 dark:text-gray-300">
-                    {difficulty}
+                    {getDifficultyLabel(difficulty)}
                   </span>
                 </label>
               ))}
@@ -304,44 +341,61 @@ export function UserRegistration({ onComplete }: UserRegistrationProps) {
           </div>
 
           {/* Histórico de Saúde */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              <Heart className="w-4 h-4 inline mr-1" />
-              Histórico de Saúde Ocular
-            </label>
-            <textarea
-              value={formData.healthHistory}
-              onChange={(e) => setFormData(prev => ({ ...prev, healthHistory: e.target.value }))}
-              rows={4}
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Descreva qualquer histórico de problemas oculares, cirurgias, medicamentos ou condições relevantes..."
-              disabled={isSubmitting}
-            />
+          <div className="border-t border-gray-200 dark:border-gray-600 pt-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+              <Heart className="w-5 h-5 mr-2" />
+              Histórico de Saúde
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {healthHistoryOptions.map((condition) => (
+                <label key={condition} className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.healthHistory.includes(condition)}
+                    onChange={() => handleCheckboxChange('healthHistory', condition)}
+                    className="mr-3"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    {getHealthLabel(condition)}
+                  </span>
+                </label>
+              ))}
+            </div>
           </div>
 
-          {/* Erro de submissão */}
+          {/* Disclaimer Médico */}
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <div className="flex items-start">
+              <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mr-3 mt-0.5 flex-shrink-0" />
+              <div className="text-sm text-yellow-800 dark:text-yellow-200">
+                <p className="font-medium mb-1">Importante:</p>
+                <p>
+                  Este teste não substitui uma consulta oftalmológica profissional. 
+                  Os resultados são apenas indicativos e devem ser complementados 
+                  por avaliação médica especializada.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {errors.submit && (
-            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <p className="text-red-600 dark:text-red-400 text-sm">{errors.submit}</p>
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <p className="text-red-800 dark:text-red-200 text-sm">{errors.submit}</p>
             </div>
           )}
 
-          {/* Botão Submit */}
           <button
             type="submit"
-            disabled={isSubmitting}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-400 disabled:to-gray-500 text-white font-semibold py-4 px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl disabled:cursor-not-allowed"
+            disabled={isLoading}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-4 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center"
           >
-            {isSubmitting ? (
+            {isLoading ? (
               <>
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Salvando...
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                Salvando dados...
               </>
             ) : (
-              <>
-                Continuar para Pagamento
-                <ChevronRight className="w-5 h-5" />
-              </>
+              'Continuar para Pagamento'
             )}
           </button>
         </form>

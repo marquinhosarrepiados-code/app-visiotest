@@ -71,7 +71,9 @@
     "tailwind-merge": "^3.3.1",
     "vaul": "^1.1.2",
     "zod": "latest",
-    "firebase": "latest"
+    "firebase": "latest",
+    "@types/uuid": "latest",
+    "uuid": "latest"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
